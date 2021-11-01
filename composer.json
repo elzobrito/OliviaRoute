@@ -1,0 +1,19 @@
+{
+    "name": "elzobrito/olivia-router",
+    "description": "Router php",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Elzo Brito dos Santos Filho",
+            "email": "elzo.filho@etec.sp.gov.br"
+        }
+    ],
+    "require": {
+        "php": "^7.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "OliviaRouter\\": "src"
+        }
+    }
+}
