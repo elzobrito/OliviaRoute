@@ -72,7 +72,7 @@ class Router
         foreach (explode('/', $callables[0]) as $controller_part)
             array_push($controller, ucfirst($controller_part));
 
-        $controller = $_SESSION['BASENAME'] . '\\' . $_SESSION['Controller_folder'] . '\\' . implode('\\', $controller);
+        $controller = $_SESSION['App_folder'] . '\\' . $_SESSION['Controller_folder'] . '\\' . implode('\\', $controller);
 
         return ['controller' => $controller, 'action' => $callables[1]];
     }
