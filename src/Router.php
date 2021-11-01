@@ -33,7 +33,6 @@ class Router
     public function route($http_method, $pattern, $controller_method, $middleware)
     {
         $pattern = $this->route_to_regex('/' . $_SESSION['BASENAME'] . $pattern);
-
         $this->route[$http_method . $pattern] = [
             'http_method' => $http_method,
             'url_pattern' => $pattern,
@@ -47,10 +46,8 @@ class Router
         $slashes_escaped = str_replace('/', '\/', $path);
         $route = preg_replace_callback('/({:.+?})/', function ($matches) {
             $param_name = preg_replace("/[^A-Za-z0-9 ]/", '', $matches[0]);
-
             return "(?<{$param_name}>.*)";
         }, $slashes_escaped);
-
         return '/^' . $route . '$/';
     }
 
@@ -59,11 +56,10 @@ class Router
         $callables = explode('#', $str);
         $controller = [];
 
-        foreach (explode('/', $callables[0]) as $controller_part) {
+        foreach (explode('/', $callables[0]) as $controller_part)
             array_push($controller, ucfirst($controller_part));
-        }
 
-        $controller = $_SESSION['App_folder'].'\\'.$_SESSION['Middleware_folder'].'\\' . implode('\\', $controller);
+        $controller = $_SESSION['App_folder'] . '\\' . $_SESSION['Middleware_folder'] . '\\' . implode('\\', $controller);
 
         return ['middleware' => $controller, 'action' => $callables[1]];
     }
@@ -73,13 +69,10 @@ class Router
         $callables = explode('#', $str);
         $controller = [];
 
-        foreach (explode('/', $callables[0]) as $controller_part) {
+        foreach (explode('/', $callables[0]) as $controller_part)
             array_push($controller, ucfirst($controller_part));
-        }
 
-        
-
-        $controller = $_SESSION['BASENAME'].'\\'.$_SESSION['Controller_folder'].'\\' . implode('\\', $controller);
+        $controller = $_SESSION['BASENAME'] . '\\' . $_SESSION['Controller_folder'] . '\\' . implode('\\', $controller);
 
         return ['controller' => $controller, 'action' => $callables[1]];
     }
@@ -114,11 +107,9 @@ class Router
     function __call($name, $arguments)
     {
         $clausule = $arguments[0];
-        if (count($arguments) > 1) {
+        if (count($arguments) > 1)
             $clausule = $arguments;
-        }
         $this->clausules[strtolower($name)] = $clausule;
-
         return $this;
     }
 }
