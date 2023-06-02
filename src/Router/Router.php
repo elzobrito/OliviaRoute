@@ -1,75 +1,74 @@
 <?php
 
-namespace OliviaRouter\Router;
-
-use OliviaRouter\Request\Request;
+namespace OliviaRouter;
 
 class Router
 {
-    private $routes = [];
-    private $middlewares = [];
+    private $route;
+    private $clauses;
+
+    public function __construct()
+    {
+        $this->route = [];
+        $this->clauses = [];
+    }
 
     public function get($pattern, $controller_method)
     {
-        $this->addRoute('GET', $pattern, $controller_method);
+        $this->route('get', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
     }
 
     public function post($pattern, $controller_method)
     {
-        $this->addRoute('POST', $pattern, $controller_method);
-    }
-
-    public function addRoute($http_method, $pattern, $controller_method)
-    {
-        $pattern = $this->preparePattern($pattern);
-        $this->routes[] = new Route($http_method, $pattern, $controller_method);
-    }
-
-    public function addMiddleware($middleware)
-    {
-        $this->middlewares[] = $middleware;
-    }
-
-    public function execute(Request $request)
-    {
-        foreach ($this->routes as $route) {
-            if ($route->matches($request)) {
-                $this->processMiddleware();
-                $this->invokeControllerMethod($route->getControllerMethod(), $route->getParams());
-                return;
+        if ($this->isCsrfEnabled()) {
+            if ($this->requestPost('_token') === $_SESSION['UUID']) {
+                $this->route('post', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
             }
-        }
-
-        $this->handle404();
-    }
-
-    private function processMiddleware()
-    {
-        foreach ($this->middlewares as $middleware) {
-            $middleware->handle();
+        } else {
+            $this->route('post', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
         }
     }
 
-    private function invokeControllerMethod($controller_method, $params)
+    public function route($http_method, $pattern, $controller_method, $middleware)
     {
-        [$controllerClass, $methodName] = explode('@', $controller_method);
+        $pattern = $this->routeToRegex('/' . $_SESSION['BASENAME'] . $pattern);
 
-        $controllerInstance = new $controllerClass();
-        $controllerInstance->{$methodName}(...$params);
+        $handler = [
+            'http_method' => $http_method,
+            'url_pattern' => $pattern,
+            'handler' => $controller_method,
+            'middleware' => $middleware
+        ];
+
+        $this->route[] = $handler;
     }
 
-    private function handle404()
+    public function execute($request_data)
     {
-        http_response_code(404);
-        // Handle the 404 error accordingly (e.g., show a custom error page)
-        echo "404 - Not Found";
-        exit;
+        $routerDispatcher = new RouterDispatcher($this->route, $this->clauses);
+        $routerDispatcher->dispatch($request_data);
     }
 
-    private function preparePattern($pattern)
+    private function isCsrfEnabled()
     {
-        $pattern = '/^' . str_replace('/', '\/', $pattern) . '$/';
-        $pattern = preg_replace('/\{(.+?)\}/', '(?<$1>[^\/]+)', $pattern);
+        return isset($_SESSION['CSRF']) && $_SESSION['CSRF'] === true;
+    }
+
+    public function __call($name, $arguments)
+    {
+        $clause = $arguments[0];
+        if (count($arguments) > 1) {
+            $clause = $arguments;
+        }
+        $this->clauses[strtolower($name)] = $clause;
+        return $this;
+    }
+
+    private function routeToRegex($pattern)
+    {
+        $pattern = preg_replace('/\//', '\\/', $pattern);
+        $pattern = preg_replace('/\{([a-z]+)\}/', '(?P<\1>[a-zA-Z0-9-]+)', $pattern);
+        $pattern = '/^' . $pattern . '$/';
         return $pattern;
     }
 }

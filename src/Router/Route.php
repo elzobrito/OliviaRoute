@@ -3,10 +3,10 @@
 namespace OliviaRouter\Router;
 
 use OliviaRouter\Request\Request;
+use OliviaRouter\Trie\Trie;
 
 class Route
 {
-    private $httpMethod;
     private $pattern;
     private $controllerMethod;
     private $params;
@@ -18,17 +18,27 @@ class Route
         $this->controllerMethod = $controllerMethod;
     }
 
-    public function matches(Request $request)
+    public function matches(Request $request, Trie $trie)
     {
-        return $request->getMethod() === $this->httpMethod &&
-            preg_match($this->pattern, $request->getUri(), $this->params) === 1;
+        $matches = $trie->search($this->pattern, $request->getUri());
+    
+        if ($matches) {
+            $this->params = array_values($matches);
+            array_shift($this->params); // Remove the full match
+            return true;
+        }
+    
+        return false;
     }
 
     public function getParams()
     {
-        $params = array_values($this->params);
-        array_shift($params); // Remove the full match
-        return $params;
+        return $this->params ?? [];
+    }
+
+    public function getPattern()
+    {
+        return $this->pattern;
     }
 
     public function getControllerMethod()

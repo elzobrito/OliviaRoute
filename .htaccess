@@ -1,0 +1,16 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine on
+    RewriteCond %{THE_REQUEST} /index.php [NC]
+    RewriteRule ^(.*)index\.php$ /$1/ [R=301,L,NC,NE]
+    #Header set X-XSS-Protection "1; mode=block"
+    #Header always append X-Frame-Options "DENY"
+    #Header always set X-Content-Type-Options "nosniff"
+    #Header set Strict-Transport-Security "max-age=631138519"
+    #Header set Referrer-Policy "same-origin"
+    #Header set Permissions-Policy "geolocation 'self'; microphone 'none';camera 'none';fullscreen 'self'"
+    #Header set Content-Security-Policy "default-src https:; font-src https: data:; img-src https: data:; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:;"
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+    
+</IfModule>
