@@ -1,48 +1,91 @@
 <?php
 
-namespace OliviaRouter\Router;
-
-use OliviaRouter\Request\Request;
-use OliviaRouter\Trie\Trie;
+namespace OliviaRouter;
 
 class Route
 {
-    private $pattern;
-    private $controllerMethod;
-    private $params;
+    private string $httpMethod;
+    private string $pattern;
+    private string $controllerMethod;
+    private $middleware;
+    private array $params = [];
+    private bool $compiledPattern;
 
-    public function __construct($httpMethod, $pattern, $controllerMethod)
-    {
-        $this->httpMethod = $httpMethod;
+    public function __construct(
+        string $httpMethod,
+        string $pattern,
+        string $controllerMethod,
+        $middleware = null,
+        bool $compiledPattern = false
+    ) {
+        $this->httpMethod = strtoupper($httpMethod);
         $this->pattern = $pattern;
         $this->controllerMethod = $controllerMethod;
+        $this->middleware = $middleware;
+        $this->compiledPattern = $compiledPattern;
     }
 
-    public function matches(Request $request, Trie $trie)
+    public static function fromLegacyArray(array $route): self
     {
-        $matches = $trie->search($this->pattern, $request->getUri());
-    
-        if ($matches) {
-            $this->params = array_values($matches);
-            array_shift($this->params); // Remove the full match
-            return true;
+        if (isset($route['url_pattern'])) {
+            return new self(
+                $route['http_method'] ?? 'GET',
+                $route['url_pattern'],
+                $route['handler'] ?? '',
+                $route['middleware'] ?? null,
+                true
+            );
         }
-    
-        return false;
+
+        return new self(
+            $route['http_method'] ?? 'GET',
+            $route['pattern'] ?? '/',
+            $route['handler'] ?? '',
+            $route['middleware'] ?? null
+        );
     }
 
-    public function getParams()
+    public function matches(Request $request, Trie $trie): bool
     {
-        return $this->params ?? [];
+        if ($request->getMethod() !== $this->httpMethod) {
+            return false;
+        }
+
+        $matches = $this->compiledPattern
+            ? $trie->searchRegex($this->pattern, $request->getUri())
+            : $trie->search($this->pattern, $request->getUri());
+
+        if ($matches === false) {
+            $this->params = [];
+            return false;
+        }
+
+        $this->params = $matches;
+        return true;
     }
 
-    public function getPattern()
+    public function getParams(): array
+    {
+        return $this->params;
+    }
+
+    public function getPattern(): string
     {
         return $this->pattern;
     }
 
-    public function getControllerMethod()
+    public function getControllerMethod(): string
     {
         return $this->controllerMethod;
+    }
+
+    public function getHttpMethod(): string
+    {
+        return $this->httpMethod;
+    }
+
+    public function getMiddleware()
+    {
+        return $this->middleware;
     }
 }

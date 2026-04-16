@@ -2,73 +2,145 @@
 
 namespace OliviaRouter;
 
-
 class RouterDispatcher
 {
-    private $route;
-    private $clauses;
+    private array $routes;
+    private RouterConfig $config;
+    private Trie $trie;
+    private array $clauses;
 
-    public function __construct(array $route, array $clauses)
+    public function __construct(array $routes, $configOrClauses = [], ?Trie $trie = null, array $clauses = [])
     {
-        $this->route = $route;
-        $this->clauses = $clauses;
+        $this->routes = $routes;
+        $this->trie = $trie ?? new Trie();
+
+        if ($configOrClauses instanceof RouterConfig) {
+            $this->config = $configOrClauses;
+            $this->clauses = $clauses;
+            return;
+        }
+
+        $this->config = RouterConfig::fromSession();
+        $this->clauses = is_array($configOrClauses) ? $configOrClauses : [];
     }
 
     public function dispatch($request_data)
     {
+        $request = $request_data instanceof Request
+            ? $request_data
+            : Request::fromArray((array) $request_data);
 
         $_SESSION['e404'] = true;
-        foreach ($this->route as $actions) {
-            if ($request_data['REQUEST_METHOD'] === strtoupper($actions['http_method'])) {
-                if (preg_match($actions['url_pattern'], $request_data['REQUEST_URI'], $params) === 1) {
-                    $handler = $actions['handler'];
 
-                    if ($actions['middleware'] != null) {
-                        $middlewares = is_array($actions['middleware']) ? $actions['middleware'] : [$actions['middleware']];
-                        $this->executeMiddlewares($middlewares);
-                    }
+        foreach ($this->routes as $route) {
+            $route = $this->normalizeRoute($route);
 
-                    $this->executeHandler($handler, $params, $request_data);
-                    $_SESSION['e404'] = false;
-                    break;
-                }
+            if (!$route->matches($request, $this->trie)) {
+                continue;
             }
+
+            $this->executeMiddlewares($route->getMiddleware());
+            $this->validateCsrf($route, $request);
+            $this->executeHandler($route->getControllerMethod(), $route->getParams(), $request);
+
+            $_SESSION['e404'] = false;
+            return;
         }
     }
 
-    private function executeMiddlewares(array $middlewares)
+    private function validateCsrf(Route $route, Request $request): void
     {
-        foreach ($middlewares as $middleware) {
-            $callMiddleware = $this->callMiddlewareClass($middleware . '#handle');
-            $middlewareInstance = MiddlewareFactory::createMiddleware($callMiddleware['middleware']);
-            $middlewareInstance->handle();
+        if ($route->getHttpMethod() !== 'POST' || !$this->config->isCsrfEnabled()) {
+            return;
+        }
+
+        $token = $request->post('_token');
+        if ($token !== ($_SESSION['UUID'] ?? '')) {
+            throw new \RuntimeException('CSRF token inválido ou ausente.');
         }
     }
 
-    private function executeHandler($handler, $params, $request_data)
+    private function executeMiddlewares($middlewares): void
+    {
+        if ($middlewares === null) {
+            return;
+        }
+
+        $middlewares = is_array($middlewares) ? $middlewares : [$middlewares];
+
+        foreach ($middlewares as $middleware) {
+            $middleware = strpos($middleware, '#') === false ? $middleware . '#handle' : $middleware;
+            $callMiddleware = $this->callMiddlewareClass($middleware);
+            $middlewareInstance = MiddlewareFactory::createMiddleware($callMiddleware['middleware']);
+
+            if (!method_exists($middlewareInstance, $callMiddleware['action'])) {
+                throw new \RuntimeException(
+                    "Método {$callMiddleware['action']} não encontrado em {$callMiddleware['middleware']}."
+                );
+            }
+
+            $middlewareInstance->{$callMiddleware['action']}();
+        }
+    }
+
+    private function executeHandler(string $handler, array $params, Request $request): void
     {
         $callHandler = $this->callHandlerClass($handler);
         $handlerInstance = ControllerFactory::createController($callHandler['controller']);
-        $format = array_key_exists('CONTENT_TYPE', $request_data) ? $request_data['CONTENT_TYPE'] : 'text/html';
-        $params['format'] = explode('/', $format)[1];
-        $params['method'] = $request_data['REQUEST_METHOD'];
+
+        if (!method_exists($handlerInstance, $callHandler['action'])) {
+            throw new \RuntimeException(
+                "Método {$callHandler['action']} não encontrado em {$callHandler['controller']}."
+            );
+        }
+
+        $format = $request->getContentType() ?? 'text/html';
+        $mimeType = explode(';', $format)[0];
+        $params['format'] = explode('/', $mimeType)[1] ?? 'html';
+        $params['method'] = $request->getMethod();
 
         $handlerInstance->{$callHandler['action']}($params);
     }
 
-    private function callMiddlewareClass($str)
+    private function callMiddlewareClass(string $str): array
     {
-        $callables = explode('#', $str);
-        $controllerParts = array_map('ucfirst', explode('/', $callables[0]));
-        $middleware = $_SESSION['App_folder'] . '\\' . $_SESSION['Middleware_folder'] . '\\' . implode('\\', $controllerParts);
-        return ['middleware' => $middleware, 'action' => $callables[1]];
+        return $this->resolveCallable($str, $this->config->getMiddlewareFolder());
     }
 
-    private function callHandlerClass($str)
+    private function callHandlerClass(string $str): array
+    {
+        return $this->resolveCallable($str, $this->config->getControllerFolder());
+    }
+
+    private function resolveCallable(string $str, string $defaultFolder): array
     {
         $callables = explode('#', $str);
-        $controllerParts = array_map('ucfirst', explode('/', $callables[0]));
-        $controller = $_SESSION['App_folder'] . '\\' . $_SESSION['Controller_folder'] . '\\' . implode('\\', $controllerParts);
-        return ['controller' => $controller, 'action' => $callables[1]];
+        $class = trim($callables[0], '\\');
+        $action = $callables[1] ?? 'handle';
+
+        if (strpos($class, $this->config->getAppNamespace() . '\\') === 0) {
+            $resolvedClass = str_replace('/', '\\', $class);
+            return ['controller' => $resolvedClass, 'middleware' => $resolvedClass, 'action' => $action];
+        }
+
+        $parts = array_map('ucfirst', array_filter(explode('/', str_replace('\\', '/', $class)), 'strlen'));
+        $resolvedClass = $this->config->getAppNamespace()
+            . '\\' . $defaultFolder
+            . '\\' . implode('\\', $parts);
+
+        return ['controller' => $resolvedClass, 'middleware' => $resolvedClass, 'action' => $action];
+    }
+
+    private function normalizeRoute($route): Route
+    {
+        if ($route instanceof Route) {
+            return $route;
+        }
+
+        if (is_array($route)) {
+            return Route::fromLegacyArray($route);
+        }
+
+        throw new \InvalidArgumentException('Formato de rota inválido.');
     }
 }
