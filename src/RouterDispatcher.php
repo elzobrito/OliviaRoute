@@ -8,6 +8,7 @@ class RouterDispatcher
     private RouterConfig $config;
     private Trie $trie;
     private array $clauses;
+    private bool $matched = false;
 
     public function __construct(array $routes, $configOrClauses = [], ?Trie $trie = null, array $clauses = [])
     {
@@ -20,7 +21,7 @@ class RouterDispatcher
             return;
         }
 
-        $this->config = RouterConfig::fromSession();
+        $this->config = RouterConfig::fromGlobals();
         $this->clauses = is_array($configOrClauses) ? $configOrClauses : [];
     }
 
@@ -30,7 +31,8 @@ class RouterDispatcher
             ? $request_data
             : Request::fromArray((array) $request_data);
 
-        $_SESSION['e404'] = true;
+        $this->matched = false;
+        $this->publishNotFoundState(true);
 
         foreach ($this->routes as $route) {
             $route = $this->normalizeRoute($route);
@@ -43,21 +45,27 @@ class RouterDispatcher
             $this->validateCsrf($route, $request);
             $this->executeHandler($route->getControllerMethod(), $route->getParams(), $request);
 
-            $_SESSION['e404'] = false;
+            $this->matched = true;
+            $this->publishNotFoundState(false);
             return;
         }
     }
 
     private function validateCsrf(Route $route, Request $request): void
     {
-        if ($route->getHttpMethod() !== 'POST' || !$this->config->isCsrfEnabled()) {
+        if (!$this->config->isCsrfEnabled() || !in_array($route->getHttpMethod(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
             return;
         }
 
         $token = $request->post('_token');
-        if ($token !== ($_SESSION['UUID'] ?? '')) {
+        if ($token !== $this->config->getCsrfToken()) {
             throw new \RuntimeException('CSRF token inválido ou ausente.');
         }
+    }
+
+    public function hasMatched(): bool
+    {
+        return $this->matched;
     }
 
     private function executeMiddlewares($middlewares): void
@@ -142,5 +150,14 @@ class RouterDispatcher
         }
 
         throw new \InvalidArgumentException('Formato de rota inválido.');
+    }
+
+    private function publishNotFoundState(bool $notFound): void
+    {
+        $GLOBALS['OLIVIA_ROUTER_404'] = $notFound;
+
+        if (isset($_SESSION) && is_array($_SESSION)) {
+            $_SESSION['e404'] = $notFound;
+        }
     }
 }

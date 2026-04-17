@@ -8,6 +8,7 @@ class Request
     private string $uri;
     private array $post;
     private array $get;
+    private array $cookies;
     private array $server;
     private ?string $contentType;
 
@@ -16,6 +17,7 @@ class Request
         string $uri,
         array $post = [],
         array $get = [],
+        array $cookies = [],
         array $server = [],
         ?string $contentType = null
     ) {
@@ -23,6 +25,7 @@ class Request
         $this->uri = $uri;
         $this->post = $post;
         $this->get = $get;
+        $this->cookies = $cookies;
         $this->server = $server;
         $this->contentType = $contentType;
     }
@@ -34,6 +37,7 @@ class Request
             $requestData['REQUEST_URI'] ?? '/',
             $requestData['POST'] ?? $_POST ?? [],
             $requestData['GET'] ?? $_GET ?? [],
+            $requestData['COOKIE'] ?? $_COOKIE ?? [],
             $requestData,
             $requestData['CONTENT_TYPE'] ?? null
         );
@@ -62,6 +66,21 @@ class Request
     public function getQueryData(): array
     {
         return $this->get;
+    }
+
+    public function cookie(string $key, $default = null)
+    {
+        return $this->cookies[$key] ?? $default;
+    }
+
+    public function hasCookie(string $key): bool
+    {
+        return isset($this->cookies[$key]);
+    }
+
+    public function getCookieData(): array
+    {
+        return $this->cookies;
     }
 
     public function getServerData(): array

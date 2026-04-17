@@ -22,7 +22,8 @@ Mantém compatibilidade com a versão original, mas com melhorias importantes: C
 
 - PHP 7.4 ou superior
 - Composer autoload configurado
-- Sessão ativa com `session_start()`
+- Cookies habilitados no navegador
+- Opcionalmente, compatibilidade com sessão legada via `session_start()`
 
 ---
 
@@ -35,19 +36,23 @@ Mantém compatibilidade com a versão original, mas com melhorias importantes: C
 composer dump-autoload
 ```
 
-3. Configure as variáveis de sessão no bootstrap da aplicação:
+3. Configure os cookies do roteador no bootstrap da aplicação:
 
 ```php
 <?php
-session_start();
+$csrfToken = bin2hex(random_bytes(32));
 
-$_SESSION['App_folder'] = 'App';
-$_SESSION['Controller_folder'] = 'Controller';
-$_SESSION['Middleware_folder'] = 'Middleware';
-$_SESSION['BASENAME'] = '';
-$_SESSION['CSRF'] = true;
-$_SESSION['UUID'] = bin2hex(random_bytes(32));
+setcookie('OLIVIA_APP_NAMESPACE', 'App', 0, '/');
+setcookie('OLIVIA_CONTROLLER_FOLDER', 'Controller', 0, '/');
+setcookie('OLIVIA_MIDDLEWARE_FOLDER', 'Middleware', 0, '/');
+setcookie('OLIVIA_BASE_PATH', '', 0, '/');
+setcookie('OLIVIA_CSRF', 'true', 0, '/');
+setcookie('OLIVIA_CSRF_TOKEN', $csrfToken, 0, '/', '', true, true);
 ```
+
+Se você ainda usa a integração antiga, o pacote continua aceitando `$_SESSION['App_folder']`, `$_SESSION['Controller_folder']`, `$_SESSION['Middleware_folder']`, `$_SESSION['BASENAME']`, `$_SESSION['CSRF']` e `$_SESSION['UUID']` como fallback.
+
+Os mesmos valores também podem ser enviados por cookie com os nomes antigos ou com os aliases `OLIVIA_*`. Em chamadas manuais de `execute($requestData)`, você pode informar isso em `COOKIE`.
 
 ---
 
@@ -72,6 +77,7 @@ $requestData = [
     'REQUEST_URI' => $_SERVER['REQUEST_URI'],
     'POST' => $_POST,
     'GET' => $_GET,
+    'COOKIE' => $_COOKIE,
     'CONTENT_TYPE' => $_SERVER['CONTENT_TYPE'] ?? null,
 ];
 
@@ -118,12 +124,12 @@ $router->middleware('auth')->get('/dashboard', 'dashboard#index');
 
 ## Proteção CSRF
 
-Com `$_SESSION['CSRF'] = true`, o roteador valida automaticamente o campo `_token` nas requisições `POST`.
+Com `OLIVIA_CSRF=true`, o roteador valida automaticamente o campo `_token` nas requisições `POST`, `PUT`, `PATCH` e `DELETE`.
 
 Exemplo em formulário HTML:
 
 ```html
-<input type="hidden" name="_token" value="<?= $_SESSION['UUID'] ?>">
+<input type="hidden" name="_token" value="<?= $_COOKIE['OLIVIA_CSRF_TOKEN'] ?>">
 ```
 
 Se o token estiver ausente ou inválido, uma `RuntimeException` é lançada.
@@ -162,12 +168,14 @@ if ($route->matches($request, $trie)) {
 
 ## Melhorias da Refatoração
 
-- Configuração centralizada em `RouterConfig`, com fallback compatível para `$_SESSION`
+- Configuração centralizada em `RouterConfig`, com prioridade para cookies e fallback para `$_SESSION`
+- Origem do contexto isolada em stores dedicados para cookie, sessão e fallback
 - Dispatcher trabalhando com `Request` e `Route`
 - Compatibilidade com rotas legadas em array
 - Resolução de controller e middleware mais robusta
 - Suporte a `PUT`, `DELETE` e `PATCH`
 - Parsing de URI com suporte a query string no matching
+- CSRF com token lido de cookie
 - Erros mais claros para classes e métodos inexistentes
 
 ---

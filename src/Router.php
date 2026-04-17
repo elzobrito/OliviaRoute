@@ -4,61 +4,64 @@ namespace OliviaRouter;
 
 class Router
 {
-    private $route;
-    private $clauses;
+    private array $route;
+    private array $clauses;
+    private RouterConfig $config;
+    private Trie $trie;
 
-    public function __construct()
+    public function __construct(?RouterConfig $config = null)
     {
         $this->route = [];
         $this->clauses = [];
+        $this->config = $config ?? RouterConfig::fromGlobals();
+        $this->trie = new Trie();
     }
 
     public function get($pattern, $controller_method)
     {
-        $this->route('get', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
+        $this->route('get', $pattern, $controller_method, $this->clauses['middleware'] ?? null);
     }
 
     public function post($pattern, $controller_method)
     {
-        if ($this->isCsrfEnabled()) {
-            if ($this->requestPost('_token') === $_SESSION['UUID']) {
-                $this->route('post', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
-            }
-        } else {
-            $this->route('post', $pattern, $controller_method, isset($this->clauses['middleware']) ? $this->clauses['middleware'] : null);
-        }
+        $this->route('post', $pattern, $controller_method, $this->clauses['middleware'] ?? null);
+    }
+
+    public function put($pattern, $controller_method)
+    {
+        $this->route('put', $pattern, $controller_method, $this->clauses['middleware'] ?? null);
+    }
+
+    public function delete($pattern, $controller_method)
+    {
+        $this->route('delete', $pattern, $controller_method, $this->clauses['middleware'] ?? null);
+    }
+
+    public function patch($pattern, $controller_method)
+    {
+        $this->route('patch', $pattern, $controller_method, $this->clauses['middleware'] ?? null);
     }
 
     public function route($http_method, $pattern, $controller_method, $middleware)
     {
-        $basePath = isset($_SESSION['BASE_PATH']) ? rtrim($_SESSION['BASE_PATH'], '/') : '';
-        $normalizedPattern = '/' . ltrim($pattern, '/');
-        $pattern = $this->routeToRegex($basePath . $normalizedPattern);
-
-        $handler = [
-            'http_method' => $http_method,
-            'url_pattern' => $pattern,
-            'handler' => $controller_method,
-            'middleware' => $middleware
-        ];
-
-        $this->route[] = $handler;
+        $this->route[] = new Route(
+            $http_method,
+            $this->normalizePattern($pattern),
+            $controller_method,
+            $middleware
+        );
     }
 
     public function execute($request_data)
     {
-        $routerDispatcher = new RouterDispatcher($this->route, $this->clauses);
+        $config = $this->resolveConfigForExecution($request_data);
+        $routerDispatcher = new RouterDispatcher($this->route, $config, $this->trie, $this->clauses);
         $routerDispatcher->dispatch($request_data);
-    }
-
-    private function isCsrfEnabled()
-    {
-        return isset($_SESSION['CSRF']) && $_SESSION['CSRF'] === true;
     }
 
     public function __call($name, $arguments)
     {
-        $clause = $arguments[0];
+        $clause = $arguments[0] ?? null;
         if (count($arguments) > 1) {
             $clause = $arguments;
         }
@@ -66,11 +69,38 @@ class Router
         return $this;
     }
 
-    private function routeToRegex($pattern)
+    public function getRoutes(): array
     {
-        $pattern = preg_replace('/\//', '\\/', $pattern);
-        $pattern = preg_replace('/\{([a-z]+)\}/', '(?P<\1>[a-zA-Z0-9-]+)', $pattern);
-        $pattern = '/^' . $pattern . '$/';
-        return $pattern;
+        return $this->route;
+    }
+
+    public function getConfig(): RouterConfig
+    {
+        return $this->config;
+    }
+
+    private function resolveConfigForExecution($requestData): RouterConfig
+    {
+        if ($requestData instanceof Request) {
+            return RouterConfig::fromRequest($requestData);
+        }
+
+        if (is_array($requestData)) {
+            return RouterConfig::fromRequestData($requestData);
+        }
+
+        return $this->config;
+    }
+
+    private function normalizePattern(string $pattern): string
+    {
+        $basePath = trim($this->config->getBasePath(), '/');
+        $pattern = '/' . ltrim($pattern, '/');
+
+        if ($basePath === '') {
+            return $pattern;
+        }
+
+        return '/' . $basePath . $pattern;
     }
 }
